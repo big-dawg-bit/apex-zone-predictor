@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zone predictor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #1b2129;
+    --panel: #232b35;
+    --line: #36414f;
+    --text: #e7eaee;
+    --muted: #97a2b0;
+    --ring: #f2f4f7;
+    --heat: #ff5a28;
+    --action: #5ec2d6;
+    --warn: #f0b35a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 16px/1.4 "Barlow Semi Condensed", system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px;
+    padding: 16px; min-height: 100vh;
+  }
+  .stage { display: flex; align-items: center; justify-content: center; min-width: 0; }
+  canvas {
+    width: min(100%, calc(100vh - 32px)); aspect-ratio: 1; height: auto;
+    border: 1px solid var(--line); border-radius: 4px; cursor: crosshair;
+    touch-action: manipulation; background: #141a21;
+  }
+  aside {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 16px; display: flex; flex-direction: column; gap: 16px; align-self: start;
+  }
+  h1 { font-size: 1.5rem; font-weight: 700; margin: 0; letter-spacing: 0.01em; }
+  label { display: block; color: var(--muted); font-size: 0.9rem; margin-bottom: 4px; }
+  select, input {
+    width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line);
+    border-radius: 4px; padding: 8px; font: inherit;
+  }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: transparent; color: var(--muted); }
+  .seg button[aria-pressed="true"] { background: var(--line); color: var(--text); }
+  button {
+    font: inherit; font-weight: 600; padding: 8px 12px; border-radius: 4px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  }
+  button.primary { background: var(--action); border-color: var(--action); color: #0f2227; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  .readout { font-size: 2.2rem; font-weight: 700; line-height: 1; }
+  .readout small { font-size: 1rem; font-weight: 500; color: var(--muted); }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin: 0; }
+  .stats dt { color: var(--muted); font-size: 0.85rem; }
+  .stats dd { margin: 0; font-weight: 600; }
+  .hint { color: var(--muted); font-size: 0.95rem; margin: 0; }
+  .msg { font-size: 0.95rem; margin: 0; min-height: 1.4em; }
+  .msg.warn { color: var(--warn); }
+  [hidden] { display: none !important; }
+  @media (max-width: 760px) {
+    body { grid-template-columns: 1fr; padding: 8px; }
+    canvas { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="stage"><canvas id="map" width="1000" height="1000" aria-label="Map. Click to place the next ring center."></canvas></div>
+
+<aside>
+  <h1>Zone predictor</h1>
+
+  <div>
+    <label for="mapSelect">Map</label>
+    <select id="mapSelect"></select>
+  </div>
+
+  <div class="seg" role="group" aria-label="Mode">
+    <button id="modePredict" aria-pressed="true">Predict</button>
+    <button id="modeLog" aria-pressed="false">Log a game</button>
+  </div>
+
+  <p class="hint" id="hint">Click the center of ring 1 on the map. Each ring you add sharpens the prediction.</p>
+
+  <section id="predictPanel">
+    <div class="row">
+      <div>
+        <label for="target">Show</label>
+        <select id="target">
+          <option value="final">Final ring</option>
+          <option value="next">Next ring</option>
+        </select>
+      </div>
+      <div>
+        <label for="dataFilter">Use games from</label>
+        <select id="dataFilter">
+          <option value="">All data</option>
+          <option value="algs">ALGS</option>
+          <option value="ranked">Ranked</option>
+          <option value="pubs">Pubs</option>
+        </select>
+      </div>
+    </div>
+    <p class="readout" style="margin:16px 0 8px"><span id="effN">–</span> <small>effective matches</small></p>
+    <dl class="stats">
+      <dt>Similar games</dt><dd id="matches">–</dd>
+      <dt>Spread</dt><dd id="spread">–</dd>
+      <dt>Games on map</dt><dd id="dbCount">–</dd>
+      <dt>Rings entered</dt><dd id="ringCount">0</dd>
+    </dl>
+  </section>
+
+  <section id="logPanel" hidden>
+    <div class="row">
+      <div>
+        <label for="season">Season</label>
+        <input id="season" placeholder="S30">
+      </div>
+      <div>
+        <label for="gameMode">Mode</label>
+        <select id="gameMode">
+          <option value="ranked">Ranked</option>
+          <option value="pubs">Pubs</option>
+          <option value="algs">ALGS</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+    </div>
+    <button class="primary" id="saveGame" style="width:100%;margin-top:12px">Save game</button>
+  </section>
+
+  <div class="row">
+    <button id="undo">Undo ring</button>
+    <button id="clear">Clear</button>
+  </div>
+  <p class="msg" id="msg" role="status"></p>
+</aside>
+
+<script>
+const MAPS = [
+  ["storm-point", "Storm Point"], ["worlds-edge", "World's Edge"],
+  ["e-district", "E-District"], ["olympus", "Olympus"],
+  ["broken-moon", "Broken Moon"], ["kings-canyon", "Kings Canyon"],
+];
+// Used only until the database has real radii for a map.
+const FALLBACK_RADII = [0.34, 0.22, 0.14, 0.085, 0.05, 0.028, 0.015];
+
+const canvas = document.getElementById("map");
+const ctx = canvas.getContext("2d");
+const S = canvas.width;
+const $ = id => document.getElementById(id);
+
+const state = {
+  map: MAPS[0][0], mode: "predict", rings: [], radii: [],
+  image: null, prediction: null, requestId: 0,
+};
+
+function setMsg(text, warn = false) {
+  $("msg").textContent = text;
+  $("msg").className = "msg" + (warn ? " warn" : "");
+}
+
+function radiusFor(round) {
+  const known = state.radii.find(r => r.round === round);
+  if (known) return known.radius;
+  if (round <= FALLBACK_RADII.length) return FALLBACK_RADII[round - 1];
+  return FALLBACK_RADII[FALLBACK_RADII.length - 1] * Math.pow(0.6, round - FALLBACK_RADII.length);
+}
+
+async function loadMap() {
+  state.rings = []; state.prediction = null; state.image = null;
+  state.radii = await fetch(`/api/maps/${state.map}/radii`).then(r => r.json()).catch(() => []);
+  // Put your own map screenshot at static/maps/<map-slug>.png
+  const img = new Image();
+  img.onload = () => { state.image = img; draw(); };
+  img.onerror = () => { state.image = null; draw(); };
+  img.src = `/static/maps/${state.map}.png`;
+  updateStats(); draw();
+}
+
+function drawGrid() {
+  ctx.fillStyle = "#141a21"; ctx.fillRect(0, 0, S, S);
+  ctx.strokeStyle = "#232b35"; ctx.lineWidth = 1;
+  for (let i = 1; i < 10; i++) {
+    const p = (i * S) / 10;
+    ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, S); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(S, p); ctx.stroke();
+  }
+  ctx.fillStyle = "#97a2b0"; ctx.font = "22px 'Barlow Semi Condensed', sans-serif";
+  ctx.fillText(`No map image yet: add static/maps/${state.map}.png`, 20, 36);
+}
+
+function drawHeat(points) {
+  if (!points.length) return;
+  const maxW = Math.max(...points.map(p => p.weight));
+  const off = document.createElement("canvas");
+  off.width = off.height = S;
+  const o = off.getContext("2d");
+  // "lighter" adds overlapping blobs together, so places where many similar
+  // games ended glow brighter (red -> orange -> yellow).
+  o.globalCompositeOperation = "lighter";
+  for (const p of points) {
+    const px = p.x * S, py = p.y * S;
+    const r = Math.max(p.radius, 0.02) * S * 1.4;
+    const a = 0.04 + 0.36 * (p.weight / maxW);
+    const g = o.createRadialGradient(px, py, 0, px, py, r);
+    g.addColorStop(0, `rgba(255, 90, 40, ${a})`);
+    g.addColorStop(1, "rgba(255, 90, 40, 0)");
+    o.fillStyle = g;
+    o.beginPath(); o.arc(px, py, r, 0, Math.PI * 2); o.fill();
+  }
+  ctx.drawImage(off, 0, 0);
+}
+
+function drawRings() {
+  state.rings.forEach((r, i) => {
+    const latest = i === state.rings.length - 1;
+    ctx.strokeStyle = latest ? "#f2f4f7" : "rgba(242, 244, 247, 0.45)";
+    ctx.lineWidth = latest ? 3 : 1.5;
+    ctx.beginPath(); ctx.arc(r.x * S, r.y * S, r.radius * S, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.beginPath(); ctx.arc(r.x * S, r.y * S, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.font = "600 20px 'Barlow Semi Condensed', sans-serif";
+    ctx.fillText(String(r.round), r.x * S + 8, r.y * S - 8);
+  });
+}
+
+function drawEstimate(p) {
+  if (!p || !p.estimate) return;
+  const ex = p.estimate.x * S, ey = p.estimate.y * S;
+  ctx.strokeStyle = "#5ec2d6"; ctx.lineWidth = 2;
+  ctx.setLineDash([8, 6]);
+  ctx.beginPath(); ctx.arc(ex, ey, Math.max(p.spread * S, 6), 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(ex - 12, ey); ctx.lineTo(ex + 12, ey);
+  ctx.moveTo(ex, ey - 12); ctx.lineTo(ex, ey + 12);
+  ctx.stroke();
+}
+
+function draw() {
+  if (state.image) ctx.drawImage(state.image, 0, 0, S, S); else drawGrid();
+  if (state.mode === "predict" && state.prediction) drawHeat(state.prediction.points);
+  drawRings();
+  if (state.mode === "predict") drawEstimate(state.prediction);
+}
+
+function updateStats() {
+  const p = state.prediction;
+  $("ringCount").textContent = state.rings.length;
+  $("effN").textContent = p && p.matches ? p.effective_n : "–";
+  $("matches").textContent = p ? p.matches : "–";
+  $("spread").textContent = p && p.spread != null ? `${(p.spread * 100).toFixed(1)}% of map` : "–";
+  $("dbCount").textContent = p ? p.games_in_db : "–";
+  const next = state.rings.length + 1;
+  $("hint").textContent = state.mode === "predict"
+    ? `Click the center of ring ${next}. Each ring you add sharpens the prediction.`
+    : `Click the center of ring ${next}. Enter every ring through the last one, then save.`;
+}
+
+async function runPredict() {
+  if (state.mode !== "predict" || !state.rings.length) {
+    state.prediction = null; updateStats(); draw(); return;
+  }
+  // Ignore responses that arrive after a newer click already sent a request.
+  const id = ++state.requestId;
+  const filter = $("dataFilter").value;
+  const body = {
+    map: state.map, target: $("target").value, rings: state.rings,
+    modes: filter ? [filter] : null,
+  };
+  try {
+    const res = await fetch("/api/predict", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (id !== state.requestId) return;
+    if (!res.ok) { setMsg(errorText(data), true); return; }
+    state.prediction = data;
+    if (!data.games_in_db) setMsg("No games for this map yet. Import data or log games first.", true);
+    else if (!data.matches) setMsg("No past game fits these rings. Check the last click.", true);
+    else if (data.effective_n < 5) setMsg("Few close matches: treat this heatmap as a rough guess.", true);
+    else setMsg("");
+  } catch {
+    if (id === state.requestId) setMsg("Can't reach the server. Is uvicorn running?", true);
+  }
+  updateStats(); draw();
+}
+
+function errorText(data) {
+  if (Array.isArray(data.detail)) return data.detail.map(d => d.msg.replace(/^Value error, /, "")).join("; ");
+  return data.detail || "Request failed.";
+}
+
+canvas.addEventListener("click", e => {
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width;
+  const y = (e.clientY - rect.top) / rect.height;
+  const round = state.rings.length + 1;
+  const prev = state.rings[state.rings.length - 1];
+  if (prev && Math.hypot(x - prev.x, y - prev.y) > prev.radius * 1.08) {
+    setMsg(`Ring ${round} has to be inside ring ${prev.round}.`, true);
+    return;
+  }
+  state.rings.push({ round, x, y, radius: radiusFor(round) });
+  setMsg("");
+  updateStats(); draw(); runPredict();
+});
+
+function undo() { state.rings.pop(); setMsg(""); runPredict(); updateStats(); draw(); }
+$("undo").addEventListener("click", undo);
+$("clear").addEventListener("click", () => { state.rings = []; setMsg(""); runPredict(); });
+document.addEventListener("keydown", e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); undo(); }
+});
+
+function setMode(mode) {
+  state.mode = mode;
+  $("modePredict").setAttribute("aria-pressed", mode === "predict");
+  $("modeLog").setAttribute("aria-pressed", mode === "log");
+  $("predictPanel").hidden = mode !== "predict";
+  $("logPanel").hidden = mode !== "log";
+  setMsg(""); runPredict(); updateStats(); draw();
+}
+$("modePredict").addEventListener("click", () => setMode("predict"));
+$("modeLog").addEventListener("click", () => setMode("log"));
+$("target").addEventListener("change", runPredict);
+$("dataFilter").addEventListener("change", runPredict);
+
+$("saveGame").addEventListener("click", async () => {
+  if (state.rings.length < 2) { setMsg("Enter at least 2 rings before saving.", true); return; }
+  const res = await fetch("/api/games", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      map: state.map, season: $("season").value || null,
+      mode: $("gameMode").value, rings: state.rings,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) { setMsg(errorText(data), true); return; }
+  setMsg(`Saved game #${data.id}.`);
+  state.rings = [];
+  state.radii = await fetch(`/api/maps/${state.map}/radii`).then(r => r.json()).catch(() => []);
+  updateStats(); draw();
+});
+
+const select = $("mapSelect");
+for (const [slug, name] of MAPS) select.add(new Option(name, slug));
+select.addEventListener("change", () => { state.map = select.value; loadMap(); });
+loadMap();
+</script>
+</body>
+</html>
