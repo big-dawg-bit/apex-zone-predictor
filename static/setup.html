@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Map image setup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #1b2129;
+    --panel: #232b35;
+    --line: #36414f;
+    --text: #e7eaee;
+    --muted: #97a2b0;
+    --ring: #f2f4f7;
+    --heat: #ff5a28;
+    --action: #5ec2d6;
+    --warn: #f0b35a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 16px/1.4 "Barlow Semi Condensed", system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px;
+    padding: 16px; min-height: 100vh;
+  }
+  a { color: var(--action); }
+  .stage { display: flex; align-items: center; justify-content: center; min-width: 0; }
+  canvas#shot {
+    width: 100%; height: auto; max-height: calc(100vh - 32px);
+    border: 1px solid var(--line); border-radius: 4px; cursor: crosshair;
+    /* none, not manipulation: a touch drag has to size the crop box, not scroll. */
+    touch-action: none; background: #141a21;
+  }
+  canvas#shot:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+  .empty {
+    width: 100%; aspect-ratio: 1; border: 1px dashed var(--line); border-radius: 4px;
+    background: #141a21; display: flex; align-items: center; justify-content: center;
+    padding: 32px;
+  }
+  .empty ol { color: var(--muted); font-size: 1.05rem; margin: 0; padding-left: 1.2em; max-width: 34em; }
+  .empty li { margin-bottom: 8px; }
+  .empty kbd {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
+    padding: 1px 5px; font: inherit; color: var(--text);
+  }
+  .empty strong { color: var(--text); font-weight: 600; }
+  aside {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 16px; display: flex; flex-direction: column; gap: 16px; align-self: start;
+  }
+  h1 { font-size: 1.5rem; font-weight: 700; margin: 0; letter-spacing: 0.01em; }
+  label { display: block; color: var(--muted); font-size: 0.9rem; margin-bottom: 4px; }
+  select, input[type="file"] {
+    width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line);
+    border-radius: 4px; padding: 8px; font: inherit;
+  }
+  input[type="range"] { width: 100%; accent-color: var(--action); }
+  button {
+    font: inherit; font-weight: 600; padding: 8px 12px; border-radius: 4px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  }
+  button.primary { background: var(--action); border-color: var(--action); color: #0f2227; }
+  button[disabled] { opacity: 0.5; cursor: default; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+  #preview {
+    width: 100%; aspect-ratio: 1; border: 1px solid var(--line); border-radius: 4px;
+    background: #141a21; display: block;
+  }
+  .hint { color: var(--muted); font-size: 0.95rem; margin: 0; }
+  .readout { font-size: 0.95rem; margin: 0; font-variant-numeric: tabular-nums; }
+  .msg { font-size: 0.95rem; margin: 0; min-height: 1.4em; }
+  .msg.warn { color: var(--warn); }
+  .caution { color: var(--warn); font-size: 0.9rem; margin: 0; }
+  [hidden] { display: none !important; }
+  @media (max-width: 760px) {
+    body { grid-template-columns: 1fr; padding: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="empty" id="empty">
+    <ol>
+      <li>Open the map in-game (<strong>M</strong>) and <strong>zoom out fully</strong>.</li>
+      <li>Press <kbd>Win</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd> and drag a box around the map.</li>
+      <li>Click here and press <kbd>Ctrl</kbd> + <kbd>V</kbd>. You can also drop an image here,
+          or pick a file in the panel.</li>
+    </ol>
+  </div>
+  <canvas id="shot" tabindex="0" hidden
+          aria-label="Screenshot. Drag to draw a square crop, drag inside it to move it, arrow keys to nudge."></canvas>
+</div>
+
+<aside>
+  <h1>Map image setup</h1>
+  <p class="hint"><a href="/">Back to the predictor</a></p>
+
+  <div>
+    <label for="mapSelect">Save as</label>
+    <select id="mapSelect"></select>
+  </div>
+
+  <div>
+    <label for="fileInput">Or pick a screenshot file</label>
+    <input type="file" id="fileInput" accept="image/*">
+  </div>
+
+  <div id="cropControls" hidden>
+    <label for="sizeSlider">Crop size</label>
+    <input type="range" id="sizeSlider" min="50" max="1000" value="1000">
+    <p class="readout" id="readout">–</p>
+    <p class="hint" style="margin-top:8px">
+      Drag outside the box to draw a new square, inside it to move it.
+      Arrow keys nudge 1 px, Shift + arrow 10 px.
+    </p>
+  </div>
+
+  <div id="previewWrap" hidden>
+    <label>Result</label>
+    <canvas id="preview" width="300" height="300"></canvas>
+  </div>
+
+  <button class="primary" id="save" disabled>Save map image</button>
+  <p class="msg" id="msg" role="status"></p>
+  <p class="caution">
+    Re-cropping a map that already has logged games shifts every ring saved for it: the stored
+    coordinates are fractions of the old crop. Crop to the same area, or log that map again.
+  </p>
+</aside>
+
+<script src="/static/maps.js"></script>
+<script>
+const MAPS = window.APEX_MAPS;
+const PREVIEW = 300;
+const MAX_BYTES = 20 * 1024 * 1024;
+
+const canvas = document.getElementById("shot");
+const ctx = canvas.getContext("2d");
+const preview = document.getElementById("preview");
+const pctx = preview.getContext("2d");
+pctx.imageSmoothingEnabled = true;
+pctx.imageSmoothingQuality = "high";
+const $ = id => document.getElementById(id);
+
+const state = {
+  map: MAPS[0][0],
+  img: null,
+  url: null,       // object URL of the current screenshot, revoked before the next
+  crop: null,      // {x, y, size} in image pixels: square, integer, inside the image
+  hasImage: {},    // slug -> bool, from HEAD probes
+  drag: null,
+  dirty: false,
+};
+
+function setMsg(text, warn = false) {
+  $("msg").textContent = text;
+  $("msg").className = "msg" + (warn ? " warn" : "");
+}
+
+/* ---------- crop geometry ---------- */
+
+// Every interaction goes through this, so no code path can leave the box
+// hanging outside the image or bigger than it.
+function clampCrop(crop) {
+  const w = state.img.naturalWidth, h = state.img.naturalHeight;
+  const size = Math.max(1, Math.min(Math.round(crop.size), w, h));
+  return {
+    size,
+    x: Math.max(0, Math.min(Math.round(crop.x), w - size)),
+    y: Math.max(0, Math.min(Math.round(crop.y), h - size)),
+  };
+}
+
+function setCrop(crop, remember = true) {
+  state.crop = clampCrop(crop);
+  $("sizeSlider").value = state.crop.size;  // clamping may have shrunk it
+  if (remember) saveCrop();
+  state.dirty = true;
+}
+
+/* ---------- remembering the crop per screenshot size ---------- */
+
+// The in-game map sits in the same place on screen for every map, so reusing the
+// crop for screenshots of the same resolution is what keeps all maps cropped the
+// same way. localStorage can throw outright when site data is blocked, not just
+// fail to store, so every access is guarded.
+const cropKey = () => `crop:${state.img.naturalWidth}x${state.img.naturalHeight}`;
+
+function saveCrop() {
+  try {
+    localStorage.setItem(cropKey(), JSON.stringify(state.crop));
+  } catch {}
+}
+
+function loadCrop() {
+  try {
+    const raw = localStorage.getItem(cropKey());
+    if (!raw) return null;
+    const c = JSON.parse(raw);
+    const ok = ["x", "y", "size"].every(k => Number.isFinite(c[k]));
+    // Re-clamped by setCrop, so a stale entry can't place the box off-image.
+    return ok && c.size >= 1 ? c : null;
+  } catch {
+    return null;
+  }
+}
+
+/* ---------- loading a screenshot ---------- */
+
+function loadImage(blob) {
+  if (!blob) return;
+  const img = new Image();
+  img.onload = () => {
+    state.img = img;
+    $("empty").hidden = true;
+    canvas.hidden = false;
+    $("cropControls").hidden = false;
+    $("previewWrap").hidden = false;
+    $("save").disabled = false;
+    // Natural resolution, scaled down by CSS: no resampling on screen and the
+    // aspect ratio takes care of itself.
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const slider = $("sizeSlider");
+    // Reset the range for this image or the previous screenshot's bounds stick.
+    slider.min = 50;
+    slider.max = Math.min(img.naturalWidth, img.naturalHeight);
+    const saved = loadCrop();
+    const side = Math.min(img.naturalWidth, img.naturalHeight);
+    setCrop(saved || {
+      x: (img.naturalWidth - side) / 2, y: (img.naturalHeight - side) / 2, size: side,
+    }, false);
+    setMsg(saved ? "Reused the crop you used for this screenshot size." : "");
+    canvas.focus();
+  };
+  img.onerror = () => setMsg("Couldn't read that image.", true);
+  if (state.url) URL.revokeObjectURL(state.url);  // or every paste pins a bitmap
+  state.url = URL.createObjectURL(blob);
+  img.src = state.url;
+}
+
+// On the document, not the canvas: a paste only reaches an element that has
+// focus, and the point is that Ctrl+V works as soon as the page is open.
+document.addEventListener("paste", e => {
+  const data = e.clipboardData;
+  if (!data) return;
+  let blob = data.files && data.files[0];
+  if (!blob && data.items) {
+    for (const item of data.items) {
+      // getAsFile has to be called synchronously here; the File survives, the
+      // clipboardData object doesn't.
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        blob = item.getAsFile();
+        break;
+      }
+    }
+  }
+  if (blob) { e.preventDefault(); loadImage(blob); }
+});
+
+// Both events, and on the document too: an unhandled drop anywhere navigates the
+// tab to the file and the crop is gone.
+for (const target of [document, $("empty"), canvas]) {
+  target.addEventListener("dragover", e => e.preventDefault());
+  target.addEventListener("drop", e => {
+    e.preventDefault();
+    loadImage(e.dataTransfer.files && e.dataTransfer.files[0]);
+  });
+}
+
+$("fileInput").addEventListener("change", e => loadImage(e.target.files[0]));
+
+/* ---------- drawing ---------- */
+
+function pointerToImage(e) {
+  // Recomputed per event: the rect moves when the page scrolls or resizes.
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) * (canvas.width / rect.width),
+    y: (e.clientY - rect.top) * (canvas.height / rect.height),
+  };
+}
+
+function draw() {
+  const { x, y, size } = state.crop;
+  ctx.drawImage(state.img, 0, 0);
+
+  // One even-odd path instead of four rects around the box: no seams where they
+  // would meet, one fill.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, canvas.width, canvas.height);
+  ctx.rect(x, y, size, size);
+  ctx.fillStyle = "rgba(11, 15, 20, 0.62)";
+  ctx.fill("evenodd");
+  ctx.restore();
+
+  const unit = Math.max(1, canvas.width / 600);  // keep lines visible once scaled down
+  ctx.strokeStyle = "#5ec2d6";
+  ctx.lineWidth = 2 * unit;
+  ctx.strokeRect(x, y, size, size);
+
+  ctx.strokeStyle = "rgba(242, 244, 247, 0.5)";
+  ctx.lineWidth = unit;
+  ctx.setLineDash([6 * unit, 6 * unit]);
+  ctx.beginPath();
+  ctx.moveTo(x + size / 2, y); ctx.lineTo(x + size / 2, y + size);
+  ctx.moveTo(x, y + size / 2); ctx.lineTo(x + size, y + size / 2);
+  ctx.stroke();
+  ctx.setLineDash([]);  // or the dashes leak into the next stroke
+
+  pctx.clearRect(0, 0, PREVIEW, PREVIEW);  // never by resizing: that resets ctx state
+  pctx.drawImage(state.img, x, y, size, size, 0, 0, PREVIEW, PREVIEW);
+
+  $("readout").textContent =
+    `${size} x ${size} px at ${x}, ${y} (screenshot is ${canvas.width} x ${canvas.height})`
+    + (size < 500 ? " — under 500 px, it will be upscaled" : "");
+}
+
+// One draw per frame no matter how many events landed in it.
+function frame() {
+  if (state.dirty && state.img) { state.dirty = false; draw(); }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------- crop interaction ---------- */
+
+canvas.addEventListener("pointerdown", e => {
+  if (!state.img) return;
+  const p = pointerToImage(e);
+  const { x, y, size } = state.crop;
+  canvas.setPointerCapture(e.pointerId);  // keep tracking when the drag leaves the canvas
+  if (p.x >= x && p.x <= x + size && p.y >= y && p.y <= y + size) {
+    state.drag = { mode: "move", dx: p.x - x, dy: p.y - y };
+  } else {
+    state.drag = { mode: "draw", ax: p.x, ay: p.y };
+  }
+});
+
+canvas.addEventListener("pointermove", e => {
+  if (!state.drag) return;
+  const p = pointerToImage(e);
+  if (state.drag.mode === "move") {
+    setCrop({ x: p.x - state.drag.dx, y: p.y - state.drag.dy, size: state.crop.size }, false);
+    return;
+  }
+  const { ax, ay } = state.drag;
+  const dx = p.x - ax, dy = p.y - ay;
+  // Clamp the side against the room left in the direction of the drag before
+  // placing the origin. Clamping the origin instead slides the box off the
+  // pointer once it hits an edge.
+  const side = Math.min(
+    Math.max(Math.abs(dx), Math.abs(dy)),
+    dx >= 0 ? canvas.width - ax : ax,
+    dy >= 0 ? canvas.height - ay : ay,
+  );
+  setCrop({ x: dx >= 0 ? ax : ax - side, y: dy >= 0 ? ay : ay - side, size: side }, false);
+});
+
+function endDrag(e) {
+  if (!state.drag) return;
+  state.drag = null;
+  if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+  saveCrop();
+}
+canvas.addEventListener("pointerup", endDrag);
+canvas.addEventListener("pointercancel", endDrag);
+
+// On the canvas, not the document, so the slider and the dropdown keep their own
+// arrow key behaviour. Any drag focuses the canvas, so nudging works right after.
+canvas.addEventListener("keydown", e => {
+  const step = (e.shiftKey ? 10 : 1);
+  const move = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+  if (!move || !state.crop) return;
+  e.preventDefault();
+  setCrop({ x: state.crop.x + move[0] * step, y: state.crop.y + move[1] * step,
+            size: state.crop.size });
+});
+
+$("sizeSlider").addEventListener("input", e => {
+  if (!state.crop) return;
+  const size = Number(e.target.value);
+  // Resize around the middle so the map stays where the eye expects it.
+  setCrop({
+    x: state.crop.x + (state.crop.size - size) / 2,
+    y: state.crop.y + (state.crop.size - size) / 2,
+    size,
+  });
+});
+
+/* ---------- the map dropdown ---------- */
+
+async function refreshMapList() {
+  const select = $("mapSelect");
+  const found = await Promise.all(MAPS.map(async ([slug]) => {
+    try {
+      // HEAD is enough: StaticFiles answers it, and no-store stops a cached
+      // answer from claiming an image is there after it was replaced.
+      const res = await fetch(`/static/maps/${slug}.png`, { method: "HEAD", cache: "no-store" });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }));
+  state.hasImage = {};
+  select.textContent = "";
+  MAPS.forEach(([slug, name], i) => {
+    state.hasImage[slug] = found[i];
+    select.add(new Option(found[i] ? `${name} (has image)` : name, slug));
+  });
+  select.value = state.map;
+}
+
+$("mapSelect").addEventListener("change", e => { state.map = e.target.value; });
+
+/* ---------- saving ---------- */
+
+function errorText(data) {
+  if (Array.isArray(data.detail)) return data.detail.map(d => d.msg.replace(/^Value error, /, "")).join("; ");
+  return data.detail || "Request failed.";
+}
+
+$("save").addEventListener("click", async () => {
+  if (!state.img || !state.crop) { setMsg("Paste a screenshot first.", true); return; }
+  const slug = state.map;
+
+  // Ask again rather than trusting the label: another tab may have uploaded one.
+  try {
+    const head = await fetch(`/static/maps/${slug}.png`, { method: "HEAD", cache: "no-store" });
+    state.hasImage[slug] = head.ok;
+  } catch {}
+  if (state.hasImage[slug] && !confirm(
+      `${slug} already has a map image.\n\n`
+      + "Games already logged on that map line up with the OLD image's crop, so a "
+      + "different crop will shift every ring saved for it. The old image is kept "
+      + "as a backup in static/maps/old/.\n\nReplace it?")) {
+    setMsg("Left the existing image alone.");
+    return;
+  }
+
+  // Disabled for the whole operation: a double click would upload twice and the
+  // second one would back up the image the first one just wrote.
+  $("save").disabled = true;
+  setMsg("Saving...");
+  try {
+    const out = Math.min(2000, Math.max(1000, state.crop.size));
+    const off = document.createElement("canvas");
+    off.width = off.height = out;      // size first: resizing resets context state
+    const o = off.getContext("2d");
+    o.imageSmoothingEnabled = true;
+    o.imageSmoothingQuality = "high";
+    o.drawImage(state.img, state.crop.x, state.crop.y, state.crop.size, state.crop.size,
+                0, 0, out, out);
+
+    const blob = await new Promise(r => off.toBlob(r, "image/png"));
+    if (!blob) { setMsg("The browser couldn't encode that image.", true); return; }
+    // Checked here as well as on the server: aborting an oversized upload
+    // mid-stream can surface as a network error instead of a readable message.
+    if (blob.size > MAX_BYTES) { setMsg("That PNG is over 20 MB. Crop tighter.", true); return; }
+
+    const res = await fetch(`/api/maps/${slug}/image`, {
+      method: "PUT", headers: { "Content-Type": "image/png" }, body: blob,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { setMsg(errorText(data), true); return; }
+    setMsg(data.backup
+      ? `Saved ${slug}.png. The old image is at ${data.backup}.`
+      : `Saved ${slug}.png.`);
+    await refreshMapList();
+  } catch {
+    setMsg("Can't reach the server. Is uvicorn running?", true);
+  } finally {
+    $("save").disabled = false;
+  }
+});
+
+refreshMapList();
+</script>
+</body>
+</html>

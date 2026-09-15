@@ -37,6 +37,7 @@
     padding: 16px; display: flex; flex-direction: column; gap: 16px; align-self: start;
   }
   h1 { font-size: 1.5rem; font-weight: 700; margin: 0; letter-spacing: 0.01em; }
+  a { color: var(--action); }
   label { display: block; color: var(--muted); font-size: 0.9rem; margin-bottom: 4px; }
   select, input {
     width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line);
@@ -73,6 +74,7 @@
 
 <aside>
   <h1>Zone predictor</h1>
+  <p class="hint" style="margin-top:-8px"><a href="/setup">Set up map images</a></p>
 
   <div>
     <label for="mapSelect">Map</label>
@@ -140,12 +142,9 @@
   <p class="msg" id="msg" role="status"></p>
 </aside>
 
+<script src="/static/maps.js"></script>
 <script>
-const MAPS = [
-  ["storm-point", "Storm Point"], ["worlds-edge", "World's Edge"],
-  ["e-district", "E-District"], ["olympus", "Olympus"],
-  ["broken-moon", "Broken Moon"], ["kings-canyon", "Kings Canyon"],
-];
+const MAPS = window.APEX_MAPS;
 // Used only until the database has real radii for a map.
 const FALLBACK_RADII = [0.34, 0.22, 0.14, 0.085, 0.05, 0.028, 0.015];
 
@@ -174,11 +173,12 @@ function radiusFor(round) {
 async function loadMap() {
   state.rings = []; state.prediction = null; state.image = null;
   state.radii = await fetch(`/api/maps/${state.map}/radii`).then(r => r.json()).catch(() => []);
-  // Put your own map screenshot at static/maps/<map-slug>.png
+  // Add map images on the /setup page. The timestamp defeats the browser cache,
+  // so a map image you just re-uploaded shows up instead of the old one.
   const img = new Image();
   img.onload = () => { state.image = img; draw(); };
   img.onerror = () => { state.image = null; draw(); };
-  img.src = `/static/maps/${state.map}.png`;
+  img.src = `/static/maps/${state.map}.png?v=${Date.now()}`;
   updateStats(); draw();
 }
 
@@ -191,7 +191,7 @@ function drawGrid() {
     ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(S, p); ctx.stroke();
   }
   ctx.fillStyle = "#97a2b0"; ctx.font = "22px 'Barlow Semi Condensed', sans-serif";
-  ctx.fillText(`No map image yet: add static/maps/${state.map}.png`, 20, 36);
+  ctx.fillText('No map image yet: open "Set up map images"', 20, 36);
 }
 
 function drawHeat(points) {

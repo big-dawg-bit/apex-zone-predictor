@@ -1,1 +1,7 @@
+data/zones.db
+__pycache__/
 .venv/
+# Map images are EA screenshots: keep them local, not in the repo. The rule also
+# covers the backups under static/maps/old/; static/maps/.gitkeep is unaffected.
+static/maps/**/*.png
+static/maps/*.tmp

@@ -17,9 +17,23 @@ Open http://localhost:8000. On your phone (same Wi-Fi), open
 http://<your-pc-ip>:8000 so the map doesn't cover the game. You may have to
 allow port 8000 through Windows Firewall.
 
-Add a top-down map image per map as `static/maps/<slug>.png`
-(`storm-point.png`, `worlds-edge.png`, ...). It must be square and cover the
-same area the coordinates were recorded on, or clicks and data won't line up.
+## Map images
+
+Open http://localhost:8000/setup to add the top-down map image the predictor
+draws under your clicks:
+
+1. Open the map in-game and zoom out fully.
+2. `Win + Shift + S`, drag a box around the map.
+3. Paste on the setup page with `Ctrl + V` (or drop the file / pick it).
+4. Drag a square around the map, fine-tune with the slider and arrow keys, pick
+   the map in the dropdown and save.
+
+The crop is remembered per screenshot resolution, so every map ends up cropped
+the same way: the in-game map sits in the same place on screen for all of them.
+That matters, because every coordinate in the database is a fraction of the
+image it was clicked on. A different crop for the same map shifts every ring
+already logged there, so re-crop only if you mean to. The image you replace is
+kept as `static/maps/old/<slug>-<timestamp>.png` (nothing prunes that folder).
 
 ## Files
 
@@ -29,6 +43,8 @@ same area the coordinates were recorded on, or clicks and data won't line up.
 | `app/predict.py` | nearest-neighbour prediction and leave-one-out evaluation |
 | `app/main.py` | API endpoints |
 | `static/index.html` | the clickable map |
+| `static/setup.html` | paste a screenshot, crop it square, save it as a map image |
+| `static/maps.js` | the map slug/name list, shared by both pages |
 | `import_data.py` | import games from JSON |
 | `seed_fake.py` | fake data for testing; `--clear` removes it |
 
@@ -37,6 +53,7 @@ same area the coordinates were recorded on, or clicks and data won't line up.
 - `POST /api/predict` with `{map, rings, target: "final"|"next", modes}`
 - `POST /api/games` to save a game, `DELETE /api/games/{id}` to remove one
 - `GET /api/evaluate/{map}?rounds_seen=2` to test accuracy against a baseline
+- `PUT /api/maps/{map}/image` with a square PNG as the raw body (what /setup uses)
 
 ## Before trusting it
 
