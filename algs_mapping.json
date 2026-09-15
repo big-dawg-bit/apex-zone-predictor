@@ -1,0 +1,101 @@
+{
+  "_README": [
+    "Config for convert_algs.py. Two separate jobs, both of which must be right",
+    "before converted data is worth anything:",
+    "",
+    "1. 'fields' says where the numbers live in the API response. Every value",
+    "   below is a GUESS: apexlegendsstatus.com does not publish a response",
+    "   schema for ring data. Run 'python convert_algs.py --inspect dump.json'",
+    "   on a real response and correct these paths before converting anything.",
+    "",
+    "2. 'maps' says how to turn the source's world coordinates into fractions of",
+    "   YOUR cropped map image. This cannot be guessed at all: it depends on the",
+    "   crop you made on the /setup page. Until a map is calibrated, the",
+    "   converter refuses to emit games for it, which is deliberate - silently",
+    "   misaligned data is worse than no data, because the predictor will still",
+    "   look like it is working."
+  ],
+  "fields": {
+    "games_path": "games",
+    "game": {
+      "external_id": "gameId",
+      "map": "map",
+      "season": null,
+      "rings_path": "rings",
+      "ring": {
+        "round": "stage",
+        "x": "center.x",
+        "y": "center.y",
+        "radius": "radius"
+      }
+    },
+    "_map_aliases_note": [
+      "Source map name -> slug. Only display names are listed, because they are",
+      "the only ones worth guessing at. If the API reports internal names like",
+      "mp_rr_something instead, the converter prints the ones it did not",
+      "recognise and skips those games; add the real names here then. Do not",
+      "guess: sending one map's games to another map's slug mixes two maps'",
+      "data, and nothing downstream would flag it."
+    ],
+    "map_aliases": {
+      "Storm Point": "storm-point",
+      "World's Edge": "worlds-edge",
+      "E-District": "e-district",
+      "Olympus": "olympus",
+      "Broken Moon": "broken-moon",
+      "Kings Canyon": "kings-canyon"
+    }
+  },
+  "defaults": {
+    "mode": "algs",
+    "source": "algs-import",
+    "y_axis_up": true,
+    "fallback_radii": [
+      0.34,
+      0.22,
+      0.14,
+      0.085,
+      0.05,
+      0.028,
+      0.015
+    ]
+  },
+  "maps": {
+    "storm-point": {
+      "calibrated": false,
+      "center_x": 0,
+      "center_y": 0,
+      "span": 0
+    },
+    "worlds-edge": {
+      "calibrated": false,
+      "center_x": 0,
+      "center_y": 0,
+      "span": 0
+    },
+    "e-district": {
+      "calibrated": false,
+      "center_x": 0,
+      "center_y": 0,
+      "span": 0
+    },
+    "olympus": {
+      "calibrated": false,
+      "center_x": 0,
+      "center_y": 0,
+      "span": 0
+    },
+    "broken-moon": {
+      "calibrated": false,
+      "center_x": 0,
+      "center_y": 0,
+      "span": 0
+    },
+    "kings-canyon": {
+      "calibrated": false,
+      "center_x": 0,
+      "center_y": 0,
+      "span": 0
+    }
+  }
+}
